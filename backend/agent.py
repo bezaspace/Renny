@@ -5,10 +5,10 @@ from langgraph.graph import StateGraph, MessagesState, START, END
 from langgraph.prebuilt import ToolNode
 from langchain_core.messages import SystemMessage, HumanMessage
 
-from backend.tools import get_stock_chart_data, calculate_momentum_indicator
+from backend.tools import get_stock_chart_data, calculate_momentum_indicator, run_comprehensive_analysis
 
 # Define the tools
-tools = [get_stock_chart_data, calculate_momentum_indicator]
+tools = [get_stock_chart_data, calculate_momentum_indicator, run_comprehensive_analysis]
 
 # Initialize the model
 model = ChatOpenAI(

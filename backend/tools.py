@@ -1,6 +1,8 @@
 import os
 import json
 import pandas as pd
+import numpy as np
+import talib
 import talib.abstract as ta
 import upstox_client
 from upstox_client.rest import ApiException
@@ -101,7 +103,7 @@ def calculate_momentum_indicator(symbol: str, indicator_name: str):
         'high': df['high'].values,
         'low': df['low'].values,
         'close': df['close'].values,
-        'volume': df['volume'].values
+        'volume': df['volume'].values.astype(float)
     }
     
     indicator_name = indicator_name.upper()
@@ -161,3 +163,86 @@ def calculate_momentum_indicator(symbol: str, indicator_name: str):
 
     except Exception as e:
         return json.dumps({"error": f"Failed to calculate {indicator_name}: {str(e)}"})
+
+@tool
+def run_comprehensive_analysis(symbol: str):
+    """
+    Runs a comprehensive technical analysis on a given stock symbol.
+    Executes ALL available TA-Lib indicators (excluding Pattern Recognition) 
+    to provide a complete technical overview.
+    Use this when the user asks for a "full analysis", "technical report", or "scan".
+    """
+    instrument_key = get_instrument_key(symbol)
+    df = fetch_candles(instrument_key)
+    
+    if df is None:
+        return json.dumps({"error": f"Could not fetch data for {symbol}."})
+    
+    # Prepare inputs for TA-Lib
+    inputs = {
+        'open': df['open'].values,
+        'high': df['high'].values,
+        'low': df['low'].values,
+        'close': df['close'].values,
+        'volume': df['volume'].values.astype(float)
+    }
+    
+    analysis_results = {
+        "symbol": symbol,
+        "timestamp": str(datetime.now()),
+        "indicators": {}
+    }
+    
+    # Get all function groups
+    groups = talib.get_function_groups()
+    
+    for group_name, indicators in groups.items():
+        # User requested to exclude pattern recognition
+        if group_name == 'Pattern Recognition':
+            continue
+            
+        analysis_results["indicators"][group_name] = {}
+        
+        for ind_name in indicators:
+            try:
+                func = ta.Function(ind_name)
+                
+                # Run the indicator
+                output = func(inputs)
+                
+                # Handle outputs
+                # Some indicators return a tuple of arrays (e.g., BBANDS -> upper, middle, lower)
+                # Others return a single array (e.g., RSI)
+                
+                value_snapshot = {}
+                
+                if isinstance(output, tuple) or isinstance(output, list):
+                    for idx, out_arr in enumerate(output):
+                        # Get the name of this specific output line if available, else generic
+                        out_name = func.output_names[idx] if idx < len(func.output_names) else f"out_{idx}"
+                        # Get last valid non-NaN value
+                        last_val = out_arr[-1]
+                        if pd.isna(last_val):
+                             # Try to find the last valid value if the very last one is NaN (rare but possible)
+                             valid_vals = out_arr[~np.isnan(out_arr)]
+                             last_val = valid_vals[-1] if len(valid_vals) > 0 else None
+                        
+                        value_snapshot[out_name] = float(last_val) if last_val is not None else None
+                else:
+                    # Single array output
+                    last_val = output[-1]
+                    if pd.isna(last_val):
+                         valid_vals = output[~np.isnan(output)]
+                         last_val = valid_vals[-1] if len(valid_vals) > 0 else None
+                    
+                    # Use the indicator name or 'real' as key
+                    key_name = func.output_names[0] if func.output_names else ind_name
+                    value_snapshot[key_name] = float(last_val) if last_val is not None else None
+                
+                analysis_results["indicators"][group_name][ind_name] = value_snapshot
+                
+            except Exception as e:
+                # If a specific indicator fails (e.g., not enough data), we record it but don't stop
+                analysis_results["indicators"][group_name][ind_name] = {"error": str(e)}
+
+    return json.dumps(analysis_results, default=str)

@@ -1,4 +1,5 @@
 import os
+import json
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
@@ -45,10 +46,22 @@ async def chat_endpoint(request: ChatRequest):
             content = msg.content
             tool_calls = getattr(msg, "tool_calls", [])
             
-            # If it's a tool message (output), we might want to decode the artifact if it's our chart data
-            # backend.tools.get_stock_chart_data returns a dict, which ToolNode serializes to string.
-            # We'll leave it as string/content and let frontend parse JSON if needed,
-            # OR we can try to pre-parse it if it is a valid JSON string.
+            # Pre-process tool messages to avoid sending massive JSON dumps to frontend
+            if msg_type == 'tool':
+                try:
+                    data = json.loads(content)
+                    # Check if this is the comprehensive analysis result
+                    if isinstance(data, dict) and "indicators" in data and "symbol" in data:
+                        # Replace content with a summary card format that the frontend supports
+                        # Frontend looks for 'indicator' and 'analysis' keys to render a nice card
+                        content = json.dumps({
+                            "symbol": data.get("symbol"),
+                            "indicator": "Technical Analysis Scan",
+                            "analysis": "Comprehensive set of indicators calculated successfully. See the summary below for insights."
+                        })
+                except Exception:
+                    # If it's not JSON or parsing fails, leave it as is
+                    pass
             
             serialized_messages.append({
                 "type": msg_type,
