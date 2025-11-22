@@ -55,6 +55,10 @@ def fetch_candles(instrument_key: str, interval: str = "day"):
             
             # Convert timestamp to datetime if necessary, usually string in ISO format
             df['timestamp'] = pd.to_datetime(df['timestamp'])
+            
+            # Sort by timestamp ascending (Oldest -> Newest) to ensure correct TA calc
+            df = df.sort_values(by='timestamp', ascending=True).reset_index(drop=True)
+            
             return df
         else:
             return None
@@ -170,7 +174,7 @@ def run_comprehensive_analysis(symbol: str):
     Runs a comprehensive technical analysis on a given stock symbol.
     Executes ALL available TA-Lib indicators (excluding Pattern Recognition) 
     to provide a complete technical overview.
-    Use this when the user asks for a "full analysis", "technical report", or "scan".
+    Returns chart data and overlay indicators for visualization.
     """
     instrument_key = get_instrument_key(symbol)
     df = fetch_candles(instrument_key)
@@ -187,10 +191,17 @@ def run_comprehensive_analysis(symbol: str):
         'volume': df['volume'].values.astype(float)
     }
     
+    # We'll focus on the last 100 points for the chart and overlays
+    limit = 100
+    df_subset = df.tail(limit).copy()
+    chart_data = df_subset[['timestamp', 'open', 'high', 'low', 'close', 'volume']].to_dict(orient='records')
+    
     analysis_results = {
         "symbol": symbol,
         "timestamp": str(datetime.now()),
-        "indicators": {}
+        "data": chart_data, # Main chart data
+        "overlays": {},      # Series data for overlapping indicators
+        "indicators": {}     # Snapshot values for summary
     }
     
     # Get all function groups
@@ -206,43 +217,51 @@ def run_comprehensive_analysis(symbol: str):
         for ind_name in indicators:
             try:
                 func = ta.Function(ind_name)
-                
-                # Run the indicator
                 output = func(inputs)
                 
-                # Handle outputs
-                # Some indicators return a tuple of arrays (e.g., BBANDS -> upper, middle, lower)
-                # Others return a single array (e.g., RSI)
-                
+                # Handle Snapshot (Last Value)
                 value_snapshot = {}
-                
                 if isinstance(output, tuple) or isinstance(output, list):
                     for idx, out_arr in enumerate(output):
-                        # Get the name of this specific output line if available, else generic
                         out_name = func.output_names[idx] if idx < len(func.output_names) else f"out_{idx}"
-                        # Get last valid non-NaN value
                         last_val = out_arr[-1]
                         if pd.isna(last_val):
-                             # Try to find the last valid value if the very last one is NaN (rare but possible)
                              valid_vals = out_arr[~np.isnan(out_arr)]
                              last_val = valid_vals[-1] if len(valid_vals) > 0 else None
-                        
                         value_snapshot[out_name] = float(last_val) if last_val is not None else None
                 else:
-                    # Single array output
                     last_val = output[-1]
                     if pd.isna(last_val):
                          valid_vals = output[~np.isnan(output)]
                          last_val = valid_vals[-1] if len(valid_vals) > 0 else None
-                    
-                    # Use the indicator name or 'real' as key
                     key_name = func.output_names[0] if func.output_names else ind_name
                     value_snapshot[key_name] = float(last_val) if last_val is not None else None
                 
                 analysis_results["indicators"][group_name][ind_name] = value_snapshot
-                
+
+                # Handle Overlays (Series Data) - Only for Overlap Studies
+                if group_name == 'Overlap Studies':
+                    # valid_points ensures we match the chart_data length (last 'limit' points)
+                    # We need to handle NaN at start if lookback is long, replace with null for JSON
+                    
+                    def process_array(arr):
+                        # Slice to last 'limit'
+                        sliced = arr[-limit:]
+                        # Convert to list, replace NaN with None
+                        return [float(x) if not np.isnan(x) else None for x in sliced]
+
+                    if isinstance(output, tuple) or isinstance(output, list):
+                        # Store complex overlay (e.g. BBANDS) as a dict
+                        complex_overlay = {}
+                        for idx, out_arr in enumerate(output):
+                            out_name = func.output_names[idx] if idx < len(func.output_names) else f"line_{idx}"
+                            complex_overlay[out_name] = process_array(out_arr)
+                        analysis_results["overlays"][ind_name] = complex_overlay
+                    else:
+                        # Store simple overlay (e.g. SMA) as a list
+                        analysis_results["overlays"][ind_name] = process_array(output)
+
             except Exception as e:
-                # If a specific indicator fails (e.g., not enough data), we record it but don't stop
                 analysis_results["indicators"][group_name][ind_name] = {"error": str(e)}
 
     return json.dumps(analysis_results, default=str)

@@ -54,10 +54,13 @@ async def chat_endpoint(request: ChatRequest):
                     if isinstance(data, dict) and "indicators" in data and "symbol" in data:
                         # Replace content with a summary card format that the frontend supports
                         # Frontend looks for 'indicator' and 'analysis' keys to render a nice card
+                        # WE MUST PRESERVE 'data' (chart) and 'overlays' for the frontend to render the chart!
                         content = json.dumps({
                             "symbol": data.get("symbol"),
                             "indicator": "Technical Analysis Scan",
-                            "analysis": "Comprehensive set of indicators calculated successfully. See the summary below for insights."
+                            "analysis": "Comprehensive set of indicators calculated successfully. See the summary below for insights.",
+                            "data": data.get("data"),
+                            "overlays": data.get("overlays")
                         })
                 except Exception:
                     # If it's not JSON or parsing fails, leave it as is

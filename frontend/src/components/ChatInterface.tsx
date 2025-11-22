@@ -16,6 +16,7 @@ interface ChartData {
   data: any[];
   message?: string;
   values?: any; // For indicators
+  overlays?: Record<string, any>;
   indicator?: string;
   analysis?: string;
 }
@@ -78,7 +79,11 @@ const ChatInterface: React.FC = () => {
           return (
             <div className="w-full">
               <p className="mb-2 text-gray-300">{parsedContent.message}</p>
-              <TradingChart data={parsedContent.data} symbol={parsedContent.symbol} />
+              <TradingChart 
+                  data={parsedContent.data} 
+                  symbol={parsedContent.symbol} 
+                  overlays={parsedContent.overlays}
+              />
             </div>
           );
         }
