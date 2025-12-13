@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { Send, Bot, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
 import TradingChart from './TradingChart';
+import MiniCandleChart from './MiniCandleChart';
 import IndicatorChart from './IndicatorChart';
 import EnhancedIndicatorCard from './EnhancedIndicatorCard';
 import { cn } from '@/lib/utils';
@@ -23,8 +24,13 @@ interface ChartData {
   indicator?: string;
   analysis?: string;
   series?: Record<string, any>;
-  patterns?: Array<{ name: string; direction: string; strength: number; timestamp: string }>;
-  pattern_markers?: Array<{ timestamp: string; pattern: string; direction: string; strength: number }>;
+  patterns?: Array<{ name: string; direction: string; strength: number; timestamp: string; index?: number }>;
+  pattern_markers?: Array<{ timestamp: string; pattern: string; direction: string; strength: number; index?: number }>;
+  pattern_visuals?: Array<{
+    pattern: { name: string; direction: string; strength: number; timestamp: string };
+    data: any[];
+    pattern_markers?: Array<{ timestamp: string; pattern: string; direction: string; strength: number; index?: number }>;
+  }>;
 }
 
 const ChatInterface: React.FC = () => {
@@ -147,7 +153,6 @@ const ChatInterface: React.FC = () => {
                   data={parsedContent.data}
                   symbol={parsedContent.symbol}
                   overlays={parsedContent.overlays}
-                  patternMarkers={parsedContent.pattern_markers}
                 />
               </div>
 
@@ -175,6 +180,28 @@ const ChatInterface: React.FC = () => {
                       </div>
                     ))}
                   </div>
+                </div>
+              )}
+
+              {parsedContent.pattern_visuals && parsedContent.pattern_visuals.length > 0 && (
+                <div className="space-y-3">
+                  <h4 className="text-sm font-bold text-gray-200">Pattern Visuals</h4>
+                  {parsedContent.pattern_visuals.map((v, idx) => {
+                    const label = (v.pattern?.name || '').replace(/^CDL/, '');
+                    const dir = v.pattern?.direction || '';
+                    const strength = v.pattern?.strength;
+                    const ts = v.pattern?.timestamp;
+                    const title = `${label} (${dir}${typeof strength === 'number' ? `, ${strength}` : ''})${ts ? ` - ${new Date(ts).toLocaleString()}` : ''}`;
+
+                    return (
+                      <MiniCandleChart
+                        key={`${v.pattern?.name || 'pattern'}-${v.pattern?.timestamp || idx}`}
+                        data={v.data}
+                        title={title}
+                        markers={v.pattern_markers}
+                      />
+                    );
+                  })}
                 </div>
               )}
 

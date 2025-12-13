@@ -137,6 +137,7 @@ def _scan_candlestick_patterns(
         return {
             "patterns": [],
             "pattern_markers": [],
+            "pattern_hits": [],
         }
 
     required_cols = {"open", "high", "low", "close", "timestamp"}
@@ -144,6 +145,7 @@ def _scan_candlestick_patterns(
         return {
             "patterns": [],
             "pattern_markers": [],
+            "pattern_hits": [],
             "error": "Missing required OHLCV columns for pattern scan.",
         }
 
@@ -197,6 +199,7 @@ def _scan_candlestick_patterns(
 
     patterns_out = []
     markers = []
+    hits = []
     for item in top:
         patterns_out.append(
             {
@@ -204,6 +207,7 @@ def _scan_candlestick_patterns(
                 "direction": item["direction"],
                 "strength": item["strength"],
                 "timestamp": item["timestamp"],
+                "index": item["index"],
             }
         )
         markers.append(
@@ -212,12 +216,24 @@ def _scan_candlestick_patterns(
                 "pattern": item["pattern"],
                 "direction": item["direction"],
                 "strength": item["strength"],
+                "index": item["index"],
+            }
+        )
+        hits.append(
+            {
+                "pattern": item["pattern"],
+                "timestamp": item["timestamp"],
+                "index": item["index"],
+                "direction": item["direction"],
+                "strength": item["strength"],
+                "score": item.get("score"),
             }
         )
 
     return {
         "patterns": patterns_out,
         "pattern_markers": markers,
+        "pattern_hits": hits,
     }
 
 
@@ -228,6 +244,8 @@ def build_full_analysis_payload(
     chart_limit: int = 100,
     series_limit: int = 50,
     pattern_lookback_bars: int = 20,
+    pattern_window_before: int = 12,
+    pattern_window_after: int = 8,
 ):
     instrument_key = get_instrument_key(symbol)
     df = fetch_candles(instrument_key, interval=interval, lookback_days=lookback_days)
@@ -303,6 +321,41 @@ def build_full_analysis_payload(
         strength_threshold=80,
     )
 
+    pattern_visuals = []
+    for hit in pattern_result.get("pattern_hits", []) or []:
+        idx = hit.get("index")
+        ts = hit.get("timestamp")
+        if idx is None or ts is None:
+            continue
+        try:
+            idx = int(idx)
+        except Exception:
+            continue
+
+        start = max(0, idx - int(pattern_window_before))
+        end = min(len(df_chart), idx + int(pattern_window_after) + 1)
+        df_slice = df_chart.iloc[start:end].copy()
+        slice_data = df_slice[["timestamp", "open", "high", "low", "close", "volume"]].to_dict(orient="records")
+        pattern_visuals.append(
+            {
+                "pattern": {
+                    "name": hit.get("pattern"),
+                    "direction": hit.get("direction"),
+                    "strength": hit.get("strength"),
+                    "timestamp": ts,
+                },
+                "data": slice_data,
+                "pattern_markers": [
+                    {
+                        "timestamp": ts,
+                        "pattern": hit.get("pattern"),
+                        "direction": hit.get("direction"),
+                        "strength": hit.get("strength"),
+                    }
+                ],
+            }
+        )
+
     return {
         "symbol": symbol,
         "interval": interval,
@@ -313,6 +366,7 @@ def build_full_analysis_payload(
         "timestamps": timestamps,
         "patterns": pattern_result.get("patterns", []),
         "pattern_markers": pattern_result.get("pattern_markers", []),
+        "pattern_visuals": pattern_visuals,
     }
 
 

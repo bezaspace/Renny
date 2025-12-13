@@ -63,7 +63,27 @@ def _extract_symbol(text: str) -> Optional[str]:
     tokens = re.findall(r"\b[A-Za-z]{2,15}\b", text)
     if not tokens:
         return None
-    ignore = {"FULL", "ANALYSIS", "COMPREHENSIVE", "STOCK", "SHARE", "PLEASE"}
+    ignore = {
+        "FULL",
+        "ANALYSIS",
+        "COMPREHENSIVE",
+        "STOCK",
+        "SHARE",
+        "PLEASE",
+        # Full-analysis questionnaire choices
+        "INTRADAY",
+        "SWING",
+        "INVEST",
+        "INVESTING",
+        "CONSERVATIVE",
+        "BALANCED",
+        "AGGRESSIVE",
+        "TREND",
+        "BREAKOUT",
+        "MEAN",
+        "REVERSION",
+        "RANGE",
+    }
     for tok in reversed(tokens):
         up = tok.upper()
         if up not in ignore:
@@ -94,7 +114,28 @@ def full_analysis_step(state: AgentState):
     fa_pending = state.get("fa_pending")
     symbol = state.get("fa_symbol")
 
-    if symbol is None:
+    # Guard against previously-stored questionnaire answers being incorrectly persisted as the symbol.
+    if symbol is not None:
+        bad_symbols = {
+            "INTRADAY",
+            "SWING",
+            "INVEST",
+            "INVESTING",
+            "CONSERVATIVE",
+            "BALANCED",
+            "AGGRESSIVE",
+            "TREND",
+            "BREAKOUT",
+            "MEAN",
+            "REVERSION",
+            "RANGE",
+        }
+        if str(symbol).strip().upper() in bad_symbols:
+            symbol = None
+
+    # Only extract a symbol from the user's message when we're actually expecting a symbol.
+    # Otherwise answers like "swing" (horizon) can get incorrectly stored as the symbol.
+    if symbol is None and (not fa_active or fa_pending in (None, "symbol")):
         symbol = _extract_symbol(user_text)
 
     horizon_options = {
