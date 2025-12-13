@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import axios from 'axios';
-import { Send, Bot, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Send, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import type { Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -366,12 +366,7 @@ const ChatInterface: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-gray-950 text-gray-100">
-      <header className="p-4 border-b border-gray-800 bg-gray-900 flex items-center gap-2">
-        <Bot className="w-6 h-6 text-blue-500" />
-        <h1 className="text-xl font-bold">TradeAI Analyst</h1>
-      </header>
-
+    <div className="flex flex-col h-[calc(100vh-57px)] bg-gray-950 text-gray-100">
       <div
         ref={layoutRef}
         style={{ ['--chat-panel-width' as any]: `${chatPanelWidth}px` }}
