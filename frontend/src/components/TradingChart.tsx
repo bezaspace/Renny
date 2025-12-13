@@ -7,7 +7,8 @@ import {
   CartesianGrid,
   Tooltip,
   Legend,
-  ResponsiveContainer
+  ResponsiveContainer,
+  ReferenceDot
 } from 'recharts';
 
 interface ChartDataPoint {
@@ -24,9 +25,15 @@ interface TradingChartProps {
   data: ChartDataPoint[];
   symbol: string;
   overlays?: Record<string, number[] | Record<string, number[]>>;
+  patternMarkers?: Array<{
+    timestamp: string;
+    pattern: string;
+    direction: string;
+    strength: number;
+  }>;
 }
 
-const TradingChart: React.FC<TradingChartProps> = ({ data, symbol, overlays }) => {
+const TradingChart: React.FC<TradingChartProps> = ({ data, symbol, overlays, patternMarkers }) => {
   const [activeOverlay, setActiveOverlay] = useState<string | null>(null);
 
   // Get list of available overlays
@@ -63,6 +70,26 @@ const TradingChart: React.FC<TradingChartProps> = ({ data, symbol, overlays }) =
       return newItem;
     });
   }, [data, activeOverlay, overlays]);
+
+  const resolvedPatternMarkers = useMemo(() => {
+    if (!patternMarkers || patternMarkers.length === 0) return [];
+    const byTime = new Map<number, { date: any; close: number }>();
+    mergedData.forEach((item: any) => {
+      const ts = new Date(item.timestamp).getTime();
+      if (!Number.isNaN(ts)) {
+        byTime.set(ts, { date: item.date, close: item.close });
+      }
+    });
+
+    return patternMarkers
+      .map((m) => {
+        const ts = new Date(m.timestamp).getTime();
+        const hit = byTime.get(ts);
+        if (!hit) return null;
+        return { ...m, date: hit.date, close: hit.close };
+      })
+      .filter(Boolean) as Array<any>;
+  }, [mergedData, patternMarkers]);
 
   const renderOverlayLines = () => {
     if (!activeOverlay || !overlays) return null;
@@ -166,6 +193,22 @@ const TradingChart: React.FC<TradingChartProps> = ({ data, symbol, overlays }) =
                 name="Price"
                 activeDot={{ r: 4, fill: '#fff' }}
             />
+
+            {resolvedPatternMarkers.map((m) => {
+              const color = m.direction === 'bullish' ? '#10B981' : '#EF4444';
+              const label = (m.pattern || '').replace(/^CDL/, '');
+              return (
+                <ReferenceDot
+                  key={`${m.timestamp}-${m.pattern}`}
+                  x={m.date}
+                  y={m.close}
+                  r={4}
+                  fill={color}
+                  stroke={color}
+                  label={{ value: label, position: 'top', fill: color, fontSize: 10 }}
+                />
+              );
+            })}
             
             {/* Overlay Lines */}
             {renderOverlayLines()}

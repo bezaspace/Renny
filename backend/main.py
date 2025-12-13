@@ -60,7 +60,8 @@ async def chat_endpoint(request: ChatRequest):
                             "indicator": "Technical Analysis Scan",
                             "analysis": "Comprehensive set of indicators calculated successfully. See the summary below for insights.",
                             "data": data.get("data"),
-                            "overlays": data.get("overlays")
+                            "overlays": data.get("overlays"),
+                            "series": data.get("series")
                         })
                 except Exception:
                     # If it's not JSON or parsing fails, leave it as is
