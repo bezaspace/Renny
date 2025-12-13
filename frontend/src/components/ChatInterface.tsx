@@ -1,6 +1,9 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { Send, Bot, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import type { Components } from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import TradingChart from './TradingChart';
 import MiniCandleChart from './MiniCandleChart';
 import IndicatorChart from './IndicatorChart';
@@ -110,30 +113,79 @@ const ChatInterface: React.FC = () => {
     if (!input.trim()) return;
 
     const userMsg: Message = { type: 'human', content: input };
-    setMessages(prev => [...prev, userMsg]);
+    const aiPlaceholder: Message = { type: 'ai', content: '' };
+
+    setMessages(prev => [...prev, userMsg, aiPlaceholder]);
     setInput('');
     setLoading(true);
 
+    const updateLastAi = (delta: string) => {
+      setMessages(prev => {
+        const next = [...prev];
+        for (let i = next.length - 1; i >= 0; i--) {
+          if (next[i].type === 'ai') {
+            next[i] = { ...next[i], content: (next[i].content || '') + delta };
+            break;
+          }
+        }
+        return next;
+      });
+    };
+
     try {
-      const response = await axios.post('http://localhost:8000/chat', {
-        message: userMsg.content,
-        thread_id: threadId
+      const res = await fetch('http://localhost:8000/chat/stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: userMsg.content, thread_id: threadId })
       });
 
-      // The backend returns the FULL list of messages or the delta?
-      // backend/main.py returns: "messages": serialized_messages
-      // And serialized_messages is from agent.invoke(), which returns the FINAL state.
-      // So it returns ALL messages in the thread.
-      // We should replace our local messages with the server state to ensure sync,
-      // or just append the new ones. Since we don't have complex optimistic updates, 
-      // replacing is safer but might cause flickering.
-      // Let's just take the messages from response which are NEW (after our last known one)
-      // or simpler: just use the response messages as the source of truth.
+      if (!res.ok || !res.body) {
+        throw new Error(`Streaming request failed: ${res.status}`);
+      }
 
-      setMessages(response.data.messages);
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+
+          try {
+            const evt = JSON.parse(trimmed);
+            if (evt.type === 'ai_delta' && typeof evt.delta === 'string') {
+              updateLastAi(evt.delta);
+            } else if (evt.type === 'final' && Array.isArray(evt.messages)) {
+              setMessages(evt.messages);
+            } else if (evt.type === 'error') {
+              throw new Error(evt.message || 'Streaming error');
+            }
+          } catch (e) {
+            console.error('Failed to parse stream event:', e);
+          }
+        }
+      }
     } catch (error) {
-      console.error("Error sending message:", error);
-      setMessages(prev => [...prev, { type: 'ai', content: "Sorry, I encountered an error." }]);
+      console.error('Error sending message (stream):', error);
+      // Fallback to non-streaming endpoint
+      try {
+        const response = await axios.post('http://localhost:8000/chat', {
+          message: userMsg.content,
+          thread_id: threadId
+        });
+        setMessages(response.data.messages);
+      } catch (e) {
+        console.error('Fallback /chat failed:', e);
+        setMessages(prev => [...prev, { type: 'ai', content: 'Sorry, I encountered an error.' }]);
+      }
     } finally {
       setLoading(false);
     }
@@ -281,7 +333,36 @@ const ChatInterface: React.FC = () => {
   };
 
   const renderChatContent = (msg: Message) => {
-    return <span className="whitespace-pre-wrap">{msg.content}</span>;
+    const markdownComponents: Components = {
+      h1: ({ children }) => <h1 className="text-lg font-bold mt-2 mb-2">{children}</h1>,
+      h2: ({ children }) => <h2 className="text-base font-bold mt-2 mb-2">{children}</h2>,
+      h3: ({ children }) => <h3 className="text-sm font-bold mt-2 mb-1">{children}</h3>,
+      p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+      ul: ({ children }) => <ul className="list-disc pl-5 mb-2">{children}</ul>,
+      ol: ({ children }) => <ol className="list-decimal pl-5 mb-2">{children}</ol>,
+      li: ({ children }) => <li className="mb-1">{children}</li>,
+      code: ({ children }) => (
+        <code className="px-1 py-0.5 rounded bg-gray-900 border border-gray-800 text-[0.85em]">
+          {children}
+        </code>
+      ),
+      pre: ({ children }) => (
+        <pre className="whitespace-pre-wrap p-3 rounded bg-gray-900 border border-gray-800 overflow-x-auto">
+          {children}
+        </pre>
+      ),
+    };
+
+    return (
+      <div className="min-w-0">
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          components={markdownComponents}
+        >
+          {msg.content}
+        </ReactMarkdown>
+      </div>
+    );
   };
 
   return (

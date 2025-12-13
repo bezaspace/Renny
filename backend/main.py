@@ -2,6 +2,7 @@ import os
 import json
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from backend.agent import agent
@@ -24,6 +25,37 @@ class ChatRequest(BaseModel):
     message: str
     thread_id: str = "default_thread"
 
+
+def _serialize_messages(messages):
+    serialized_messages = []
+    for msg in messages:
+        msg_type = msg.type
+        content = msg.content
+        tool_calls = getattr(msg, "tool_calls", [])
+
+        if msg_type == 'tool':
+            try:
+                data = json.loads(content)
+                if isinstance(data, dict) and "indicators" in data and "symbol" in data:
+                    content = json.dumps({
+                        "symbol": data.get("symbol"),
+                        "indicator": "Technical Analysis Scan",
+                        "analysis": "Comprehensive set of indicators calculated successfully. See the summary below for insights.",
+                        "data": data.get("data"),
+                        "overlays": data.get("overlays"),
+                        "series": data.get("series")
+                    })
+            except Exception:
+                pass
+
+        serialized_messages.append({
+            "type": msg_type,
+            "content": content,
+            "tool_calls": tool_calls,
+            "id": getattr(msg, "id", None)
+        })
+    return serialized_messages
+
 @app.post("/chat")
 async def chat_endpoint(request: ChatRequest):
     try:
@@ -38,48 +70,43 @@ async def chat_endpoint(request: ChatRequest):
         
         # Extract messages
         messages = final_state.get("messages", [])
-        
-        # Serialize messages for the frontend
-        serialized_messages = []
-        for msg in messages:
-            msg_type = msg.type
-            content = msg.content
-            tool_calls = getattr(msg, "tool_calls", [])
-            
-            # Pre-process tool messages to avoid sending massive JSON dumps to frontend
-            if msg_type == 'tool':
-                try:
-                    data = json.loads(content)
-                    # Check if this is the comprehensive analysis result
-                    if isinstance(data, dict) and "indicators" in data and "symbol" in data:
-                        # Replace content with a summary card format that the frontend supports
-                        # Frontend looks for 'indicator' and 'analysis' keys to render a nice card
-                        # WE MUST PRESERVE 'data' (chart) and 'overlays' for the frontend to render the chart!
-                        content = json.dumps({
-                            "symbol": data.get("symbol"),
-                            "indicator": "Technical Analysis Scan",
-                            "analysis": "Comprehensive set of indicators calculated successfully. See the summary below for insights.",
-                            "data": data.get("data"),
-                            "overlays": data.get("overlays"),
-                            "series": data.get("series")
-                        })
-                except Exception:
-                    # If it's not JSON or parsing fails, leave it as is
-                    pass
-            
-            serialized_messages.append({
-                "type": msg_type,
-                "content": content,
-                "tool_calls": tool_calls,
-                "id": getattr(msg, "id", None)
-            })
-            
-        return {"messages": serialized_messages}
+
+        return {"messages": _serialize_messages(messages)}
 
     except Exception as e:
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/chat/stream")
+def chat_stream_endpoint(request: ChatRequest):
+    config = {"configurable": {"thread_id": request.thread_id}}
+
+    def gen():
+        try:
+            for chunk, _metadata in agent.stream(
+                {"messages": [HumanMessage(content=request.message)]},
+                config=config,
+                stream_mode="messages",
+            ):
+                delta = getattr(chunk, "content", None)
+                if not delta:
+                    continue
+                yield (json.dumps({"type": "ai_delta", "delta": delta}) + "\n").encode("utf-8")
+
+            snapshot = agent.get_state(config)
+            messages = snapshot.values.get("messages", []) if snapshot and snapshot.values else []
+            yield (json.dumps({"type": "final", "messages": _serialize_messages(messages)}) + "\n").encode("utf-8")
+
+        except Exception as e:
+            yield (json.dumps({"type": "error", "message": str(e)}) + "\n").encode("utf-8")
+
+    return StreamingResponse(
+        gen(),
+        media_type="application/x-ndjson",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 @app.get("/")
 def health_check():

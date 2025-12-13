@@ -17,13 +17,15 @@ tools = [get_stock_chart_data, calculate_momentum_indicator, run_comprehensive_a
 analysis_model = ChatOpenAI(
     model=os.environ.get("OPENAI_MODEL_NAME", "qwen3-coder-plus"),
     temperature=0,
-    base_url=os.environ.get("OPENAI_API_BASE")
+    base_url=os.environ.get("OPENAI_API_BASE"),
+    streaming=True,
 )
 
 model = ChatOpenAI(
     model=os.environ.get("OPENAI_MODEL_NAME", "qwen3-coder-plus"),
     temperature=0,
-    base_url=os.environ.get("OPENAI_API_BASE")
+    base_url=os.environ.get("OPENAI_API_BASE"),
+    streaming=True,
 ).bind_tools(tools)
 
 
