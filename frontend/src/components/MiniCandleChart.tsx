@@ -30,6 +30,7 @@ interface MiniCandleChartProps {
   title: string;
   markers?: PatternMarker[];
   height?: number;
+  embedded?: boolean;
 }
 
 function toUTCTimeSeconds(ts: string): number | null {
@@ -38,7 +39,7 @@ function toUTCTimeSeconds(ts: string): number | null {
   return Math.floor(t / 1000);
 }
 
-const MiniCandleChart: React.FC<MiniCandleChartProps> = ({ data, title, markers, height = 220 }) => {
+const MiniCandleChart: React.FC<MiniCandleChartProps> = ({ data, title, markers, height = 220, embedded = false }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
@@ -155,6 +156,10 @@ const MiniCandleChart: React.FC<MiniCandleChartProps> = ({ data, title, markers,
       }
     };
   }, [candleData, resolvedMarkers, height]);
+
+  if (embedded) {
+    return <div ref={containerRef} className="w-full" />;
+  }
 
   return (
     <div className="w-full bg-gray-900 rounded-lg p-4 border border-gray-800">

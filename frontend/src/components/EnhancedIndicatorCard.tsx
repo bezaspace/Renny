@@ -70,9 +70,9 @@ const EnhancedIndicatorCard: React.FC<EnhancedIndicatorCardProps> = ({ indicator
                         </div>
                     </div>
                 </div>
-                <div className="h-12 w-24">
+                <div className="h-12 w-24 min-w-0">
                     {/* Sparkline */}
-                    <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={48}>
                         <LineChart data={sparklineData}>
                             <Line
                                 type="monotone"
@@ -80,6 +80,7 @@ const EnhancedIndicatorCard: React.FC<EnhancedIndicatorCardProps> = ({ indicator
                                 stroke={trend === 'rising' ? '#10B981' : trend === 'falling' ? '#EF4444' : '#9CA3AF'}
                                 strokeWidth={2}
                                 dot={false}
+                                isAnimationActive={false}
                             />
                         </LineChart>
                     </ResponsiveContainer>

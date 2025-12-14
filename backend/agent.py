@@ -14,18 +14,25 @@ from backend.tools import get_stock_chart_data, calculate_momentum_indicator, ru
 tools = [get_stock_chart_data, calculate_momentum_indicator, run_comprehensive_analysis]
 
 # Initialize the model
+api_key = os.environ.get("MISTRAL_API_KEY") or os.environ.get("OPENAI_API_KEY") or os.environ.get("LLM_API_KEY")
+api_base = os.environ.get("OPENAI_API_BASE") or os.environ.get("LLM_API_BASE") or "https://api.mistral.ai/v1"
+
+model_name = os.environ.get("OPENAI_MODEL_NAME", "devstral-medium-2512-preview")
+
 analysis_model = ChatOpenAI(
-    model=os.environ.get("OPENAI_MODEL_NAME", "qwen3-coder-plus"),
-    temperature=0,
-    base_url=os.environ.get("OPENAI_API_BASE"),
-    streaming=True,
+     model=model_name,
+     temperature=0,
+     base_url=api_base,
+     api_key=api_key,
+     streaming=True,
 )
 
 model = ChatOpenAI(
-    model=os.environ.get("OPENAI_MODEL_NAME", "qwen3-coder-plus"),
-    temperature=0,
-    base_url=os.environ.get("OPENAI_API_BASE"),
-    streaming=True,
+     model=model_name,
+     temperature=0,
+     base_url=api_base,
+     api_key=api_key,
+     streaming=True,
 ).bind_tools(tools)
 
 
@@ -41,7 +48,12 @@ class AgentState(TypedDict, total=False):
 # Define the nodes
 def chatbot(state: MessagesState):
     messages = state["messages"]
-    response = model.invoke(messages)
+    llm_messages = [
+        m
+        for m in messages
+        if not (m.type == "tool" and getattr(m, "tool_call_id", None) == "full_analysis_visuals")
+    ]
+    response = model.invoke(llm_messages)
     return {"messages": [response]}
 
 def should_continue(state: MessagesState) -> Literal["tools", END]:

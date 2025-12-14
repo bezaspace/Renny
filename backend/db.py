@@ -89,6 +89,67 @@ def init_db(db_path: str = DEFAULT_DB_PATH) -> None:
             "CREATE INDEX IF NOT EXISTS idx_holding_analysis_pa_id ON holding_analysis(portfolio_analysis_id);"
         )
 
+        # Historical candles fetched from Upstox for simulation seeding
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS historical_candles (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol TEXT NOT NULL,
+                timestamp TEXT NOT NULL,
+                open REAL NOT NULL,
+                high REAL NOT NULL,
+                low REAL NOT NULL,
+                close REAL NOT NULL,
+                volume REAL NOT NULL,
+                UNIQUE(symbol, timestamp)
+            );
+            """
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_historical_candles_symbol ON historical_candles(symbol);")
+
+        # Simulated trades log (with real-time streaming to UI)
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS trades (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                side TEXT NOT NULL,
+                quantity REAL NOT NULL,
+                price REAL NOT NULL,
+                reason TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+            """
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_trades_user_id ON trades(user_id);")
+
+        # Current simulated positions
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS sim_positions (
+                user_id TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                quantity REAL NOT NULL,
+                avg_price REAL NOT NULL,
+                unrealized_pnl REAL,
+                stop_loss REAL,
+                take_profit REAL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY(user_id, symbol),
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+            """
+        )
+
+        # Lightweight migrations for sim_positions
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(sim_positions);").fetchall()]
+        if "stop_loss" not in cols:
+            conn.execute("ALTER TABLE sim_positions ADD COLUMN stop_loss REAL")
+        if "take_profit" not in cols:
+            conn.execute("ALTER TABLE sim_positions ADD COLUMN take_profit REAL")
+
         conn.commit()
 
 
@@ -256,3 +317,200 @@ def fetch_portfolio_analysis(portfolio_analysis_id: int, db_path: str = DEFAULT_
         out = dict(pa)
         out["holding_analyses"] = [dict(r) for r in holdings]
         return out
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Historical Candles (for simulation seeding)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def upsert_historical_candles(candles: List[Dict[str, Any]], db_path: str = DEFAULT_DB_PATH) -> int:
+    """Insert or update historical candles. Returns count of inserted rows."""
+    if not candles:
+        return 0
+    with get_conn(db_path) as conn:
+        count = 0
+        for c in candles:
+            conn.execute(
+                """
+                INSERT INTO historical_candles (symbol, timestamp, open, high, low, close, volume)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(symbol, timestamp) DO UPDATE SET
+                    open=excluded.open, high=excluded.high, low=excluded.low,
+                    close=excluded.close, volume=excluded.volume
+                """,
+                (
+                    str(c.get("symbol", "")).strip().upper(),
+                    str(c.get("timestamp", "")),
+                    float(c.get("open", 0)),
+                    float(c.get("high", 0)),
+                    float(c.get("low", 0)),
+                    float(c.get("close", 0)),
+                    float(c.get("volume", 0)),
+                ),
+            )
+            count += 1
+        return count
+
+
+def fetch_historical_candles(symbol: str, limit: int = 500, db_path: str = DEFAULT_DB_PATH) -> List[Dict[str, Any]]:
+    """Fetch historical candles for a symbol, ordered by timestamp ascending."""
+    with get_conn(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT symbol, timestamp, open, high, low, close, volume
+            FROM historical_candles
+            WHERE symbol = ?
+            ORDER BY timestamp ASC
+            LIMIT ?
+            """,
+            (symbol.strip().upper(), limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_last_candle(symbol: str, db_path: str = DEFAULT_DB_PATH) -> Optional[Dict[str, Any]]:
+    """Get the most recent candle for a symbol."""
+    with get_conn(db_path) as conn:
+        row = conn.execute(
+            """
+            SELECT symbol, timestamp, open, high, low, close, volume
+            FROM historical_candles
+            WHERE symbol = ?
+            ORDER BY timestamp DESC
+            LIMIT 1
+            """,
+            (symbol.strip().upper(),),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Trades (agent trade log)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def insert_trade(
+    user_id: str,
+    symbol: str,
+    side: str,
+    quantity: float,
+    price: float,
+    reason: Optional[str] = None,
+    db_path: str = DEFAULT_DB_PATH,
+) -> int:
+    """Insert a trade record. Returns the trade ID."""
+    ensure_user(user_id, db_path=db_path)
+    with get_conn(db_path) as conn:
+        cur = conn.execute(
+            """
+            INSERT INTO trades (user_id, symbol, side, quantity, price, reason, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                user_id,
+                str(symbol).strip().upper(),
+                side.lower(),
+                float(quantity),
+                float(price),
+                reason,
+                _utc_now_iso(),
+            ),
+        )
+        return int(cur.lastrowid)
+
+
+def fetch_trades(user_id: str, limit: int = 100, db_path: str = DEFAULT_DB_PATH) -> List[Dict[str, Any]]:
+    """Fetch trades for a user, most recent first."""
+    with get_conn(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT id, user_id, symbol, side, quantity, price, reason, created_at
+            FROM trades
+            WHERE user_id = ?
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (user_id, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Simulated Positions
+# ─────────────────────────────────────────────────────────────────────────────
+
+def upsert_sim_position(
+    user_id: str,
+    symbol: str,
+    quantity: float,
+    avg_price: float,
+    unrealized_pnl: Optional[float] = None,
+    stop_loss: Optional[float] = None,
+    take_profit: Optional[float] = None,
+    db_path: str = DEFAULT_DB_PATH,
+) -> None:
+    """Insert or update a simulated position."""
+    ensure_user(user_id, db_path=db_path)
+    with get_conn(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO sim_positions (user_id, symbol, quantity, avg_price, unrealized_pnl, stop_loss, take_profit, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(user_id, symbol) DO UPDATE SET
+                quantity=excluded.quantity,
+                avg_price=excluded.avg_price,
+                unrealized_pnl=excluded.unrealized_pnl,
+                stop_loss=excluded.stop_loss,
+                take_profit=excluded.take_profit,
+                updated_at=excluded.updated_at
+            """,
+            (
+                user_id,
+                str(symbol).strip().upper(),
+                float(quantity),
+                float(avg_price),
+                unrealized_pnl,
+                stop_loss,
+                take_profit,
+                _utc_now_iso(),
+            ),
+        )
+
+
+def fetch_sim_positions(user_id: str, db_path: str = DEFAULT_DB_PATH) -> List[Dict[str, Any]]:
+    """Fetch all simulated positions for a user."""
+    with get_conn(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT user_id, symbol, quantity, avg_price, unrealized_pnl, stop_loss, take_profit, updated_at
+            FROM sim_positions
+            WHERE user_id = ?
+            ORDER BY symbol ASC
+            """,
+            (user_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def fetch_users_with_sim_positions(db_path: str = DEFAULT_DB_PATH) -> List[str]:
+    """Fetch distinct user IDs that currently have any simulated positions."""
+    with get_conn(db_path) as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT user_id FROM sim_positions ORDER BY user_id ASC"
+        ).fetchall()
+        return [str(r[0]) for r in rows]
+
+
+def delete_sim_position(user_id: str, symbol: str, db_path: str = DEFAULT_DB_PATH) -> None:
+    """Delete a simulated position (e.g., when fully sold)."""
+    with get_conn(db_path) as conn:
+        conn.execute(
+            "DELETE FROM sim_positions WHERE user_id = ? AND symbol = ?",
+            (user_id, symbol.strip().upper()),
+        )
+
+
+def clear_sim_positions(user_id: str, db_path: str = DEFAULT_DB_PATH) -> None:
+    """Clear all simulated positions for a user."""
+    with get_conn(db_path) as conn:
+        conn.execute("DELETE FROM sim_positions WHERE user_id = ?", (user_id,))
+

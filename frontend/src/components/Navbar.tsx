@@ -1,12 +1,12 @@
 import { NavLink } from 'react-router-dom';
-import { Bot, ClipboardList } from 'lucide-react';
+import { Activity, Bot, ClipboardList } from 'lucide-react';
 
 const linkBase = 'px-3 py-2 rounded-md text-sm border transition-colors';
 
 function Navbar() {
   return (
     <header className="border-b border-gray-800 bg-gray-900 text-gray-100">
-      <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
+      <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
         <div className="flex items-center gap-2">
           <Bot className="w-5 h-5 text-blue-500" />
           <div className="font-bold">TradeAI Analyst</div>
@@ -16,10 +16,9 @@ function Navbar() {
           <NavLink
             to="/onboarding"
             className={({ isActive }: { isActive: boolean }) =>
-              `${linkBase} ${
-                isActive
-                  ? 'bg-gray-800 border-gray-700 text-white'
-                  : 'bg-gray-950 border-gray-800 text-gray-300 hover:bg-gray-800'
+              `${linkBase} ${isActive
+                ? 'bg-gray-800 border-gray-700 text-white'
+                : 'bg-gray-950 border-gray-800 text-gray-300 hover:bg-gray-800'
               }`
             }
           >
@@ -30,12 +29,26 @@ function Navbar() {
           </NavLink>
 
           <NavLink
+            to="/trading"
+            className={({ isActive }: { isActive: boolean }) =>
+              `${linkBase} ${isActive
+                ? 'bg-gray-800 border-gray-700 text-white'
+                : 'bg-gray-950 border-gray-800 text-gray-300 hover:bg-gray-800'
+              }`
+            }
+          >
+            <span className="inline-flex items-center gap-2">
+              <Activity className="w-4 h-4" />
+              Trading
+            </span>
+          </NavLink>
+
+          <NavLink
             to="/chat"
             className={({ isActive }: { isActive: boolean }) =>
-              `${linkBase} ${
-                isActive
-                  ? 'bg-gray-800 border-gray-700 text-white'
-                  : 'bg-gray-950 border-gray-800 text-gray-300 hover:bg-gray-800'
+              `${linkBase} ${isActive
+                ? 'bg-gray-800 border-gray-700 text-white'
+                : 'bg-gray-950 border-gray-800 text-gray-300 hover:bg-gray-800'
               }`
             }
           >
@@ -48,3 +61,4 @@ function Navbar() {
 }
 
 export default Navbar;
+

@@ -59,9 +59,9 @@ const IndicatorChart: React.FC<IndicatorChartProps> = ({ indicator, data, timest
             itemStyle={{ fontSize: '12px' }}
             labelStyle={{ color: '#9CA3AF', marginBottom: '0.25rem' }}
           />
-          <Bar dataKey="Hist" fill="#60A5FA" opacity={0.5} />
-          <Line type="monotone" dataKey="MACD" stroke="#F59E0B" dot={false} strokeWidth={2} />
-          <Line type="monotone" dataKey="Signal" stroke="#EC4899" dot={false} strokeWidth={2} />
+          <Bar dataKey="Hist" fill="#60A5FA" opacity={0.5} isAnimationActive={false} />
+          <Line type="monotone" dataKey="MACD" stroke="#F59E0B" dot={false} strokeWidth={2} isAnimationActive={false} />
+          <Line type="monotone" dataKey="Signal" stroke="#EC4899" dot={false} strokeWidth={2} isAnimationActive={false} />
         </ComposedChart>
       );
     }
@@ -93,6 +93,7 @@ const IndicatorChart: React.FC<IndicatorChartProps> = ({ indicator, data, timest
             stroke="#8B5CF6" 
             dot={false} 
             strokeWidth={2} 
+            isAnimationActive={false}
           />
         ))}
       </LineChart>
@@ -100,8 +101,8 @@ const IndicatorChart: React.FC<IndicatorChartProps> = ({ indicator, data, timest
   };
 
   return (
-    <div className="h-32 w-full mt-3 bg-gray-900/50 rounded border border-gray-800 p-2">
-      <ResponsiveContainer width="100%" height="100%">
+    <div className="h-32 w-full min-w-0 mt-3 bg-gray-900/50 rounded border border-gray-800 p-2">
+      <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={128}>
         {renderChart()}
       </ResponsiveContainer>
     </div>

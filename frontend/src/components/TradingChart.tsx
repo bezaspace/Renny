@@ -105,6 +105,7 @@ const TradingChart: React.FC<TradingChartProps> = ({ data, symbol, overlays, pat
             dot={false} 
             strokeWidth={2} 
             name={activeOverlay}
+            isAnimationActive={false}
          />
        );
     } else {
@@ -119,6 +120,7 @@ const TradingChart: React.FC<TradingChartProps> = ({ data, symbol, overlays, pat
                 dot={false}
                 strokeWidth={1.5}
                 name={key}
+                isAnimationActive={false}
             />
         ));
     }
@@ -150,8 +152,8 @@ const TradingChart: React.FC<TradingChartProps> = ({ data, symbol, overlays, pat
           )}
       </div>
 
-      <div className="h-64 w-full">
-        <ResponsiveContainer width="100%" height="100%">
+      <div className="h-64 w-full min-w-0">
+        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={256}>
           <LineChart
             data={mergedData}
             margin={{
@@ -192,6 +194,7 @@ const TradingChart: React.FC<TradingChartProps> = ({ data, symbol, overlays, pat
                 strokeWidth={2} 
                 name="Price"
                 activeDot={{ r: 4, fill: '#fff' }}
+                isAnimationActive={false}
             />
 
             {resolvedPatternMarkers.map((m) => {
